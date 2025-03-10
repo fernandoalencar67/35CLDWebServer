@@ -1,0 +1,92 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo "Autenticando no Amazon ECR..."
+      - AWS_REGION="us-east-1"
+      - ECR_REPO_URI=$(aws ecr describe-repositories --repository-names webserverimage --query "repositories[0].repositoryUri" --output text)
+      - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $(echo $ECR_REPO_URI | cut -d'/' -f1)
+      - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+
+  build:
+    commands:
+      - echo "Construindo a imagem Docker..."
+      - docker build -t $ECR_REPO_URI:$IMAGE_TAG .
+      - docker tag $ECR_REPO_URI:$IMAGE_TAG $ECR_REPO_URI:latest
+
+  post_build:
+    commands:
+      - echo "Enviando imagem Docker para o Amazon ECR..."
+      - docker push $ECR_REPO_URI:$IMAGE_TAG
+      - docker push $ECR_REPO_URI:latest
+
+      - echo "Registrando nova Task Definition no ECS..."
+      - |
+        TASK_DEF=$(cat <<EOF
+        {
+          "family": "Fiap35CLDWebServerTaskDef",
+          "networkMode": "bridge",
+          "requiresCompatibilities": ["EC2"],
+          "cpu": "256",
+          "memory": "512",
+          "containerDefinitions": [
+            {
+              "name": "fiap35cld-web-container",
+              "image": "$ECR_REPO_URI:$IMAGE_TAG",
+              "essential": true,
+              "portMappings": [
+                {
+                  "containerPort": 3000,
+                  "hostPort": 3000
+                }
+              ]
+            }
+          ]
+        }
+        EOF
+        )
+        echo "$TASK_DEF" > taskdef.json
+        aws ecs register-task-definition --cli-input-json file://taskdef.json
+
+      - echo "Parando as tasks antigas no ECS..."
+      - CLUSTER_NAME="Fiap35CLDWebServerCluster"
+      - SERVICE_NAME="Fiap35CLDECSService"
+      - TASK_ARN_OLD=$(aws ecs list-tasks --cluster $CLUSTER_NAME --service-name $SERVICE_NAME --desired-status RUNNING --query "taskArns" --output text)
+      - if [ -n "$TASK_ARN_OLD" ]; then aws ecs stop-task --cluster $CLUSTER_NAME --task $TASK_ARN_OLD; fi
+
+      - echo "Atualizando o serviço com nova task definition..."
+      - aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --task-definition Fiap35CLDWebServerTaskDef --force-new-deployment
+
+      - echo "Aguardando nova task iniciar..."
+      - |
+        for i in {1..15}; do
+          TASK_ARN=$(aws ecs list-tasks --cluster $CLUSTER_NAME --service-name $SERVICE_NAME --desired-status RUNNING --query "taskArns[0]" --output text)
+          if [[ "$TASK_ARN" == "None" || -z "$TASK_ARN" ]]; then
+            echo "Aguardando task iniciar... ($i/15)"
+            sleep 10
+            continue
+          fi
+
+          IMAGE_RUNNING=$(aws ecs describe-tasks --cluster $CLUSTER_NAME --tasks "$TASK_ARN" --query "tasks[0].containers[0].image" --output text)
+
+          echo "Imagem rodando: $IMAGE_RUNNING"
+          echo "Imagem esperada: $ECR_REPO_URI:$IMAGE_TAG"
+
+          if [[ "$IMAGE_RUNNING" == "$ECR_REPO_URI:$IMAGE_TAG" ]]; then
+            echo "Imagem correta está em execução no ECS!"
+            break
+          else
+            echo "Ainda não atualizou... Tentando novamente ($i/15)"
+            sleep 10
+          fi
+
+          if [[ "$i" == 15 ]]; then
+            echo "Timeout esperando a nova imagem subir no ECS. Falhando o build."
+            exit 1
+          fi
+        done
+
+artifacts:
+  files:
+    - "**/*"
