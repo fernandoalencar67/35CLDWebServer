@@ -1,5 +1,5 @@
 # Imagem base oficial do Node (vem com npm)
-FROM FROM public.ecr.aws/docker/library/node:14
+FROM public.ecr.aws/docker/library/node:14
 
 # Define o diretório de trabalho dentro do container
 WORKDIR /app
