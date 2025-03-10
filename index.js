@@ -1,3 +1,7 @@
+const express = require('express');
+const app = express();
+const port = process.env.PORT || 3000;
+
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -59,7 +63,7 @@ app.get('/', (req, res) => {
           </thead>
           <tbody>
             <tr><td>Fernando Alencar</td><td>RM355607</td></tr>
-            <tr><td>Filipe Lopes</td><td>RM356144</td></tr>
+            <tr><td>Felipe Lopes</td><td>RM356144</td></tr>
             <tr><td>Marcelo Vieira</td><td>RM355727</td></tr>
             <tr><td>Nill Bryan</td><td>RM356519</td></tr>
             <tr><td>Paulo Borges</td><td>RM355617</td></tr>
@@ -68,4 +72,8 @@ app.get('/', (req, res) => {
       </body>
     </html>
   `);
+});
+
+app.listen(port, '0.0.0.0', () => {
+  console.log(`Servidor rodando na porta ${port}`);
 });
