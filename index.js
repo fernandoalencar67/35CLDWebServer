@@ -14,7 +14,7 @@ app.get('/', (req, res) => {
             margin: 0;
             padding: 0;
             font-family: Arial, sans-serif;
-            background: linear-gradient(to right,rgba(0, 255, 13, 0.66),rgba(255, 255, 255, 0));
+            background: linear-gradient(to right,rgba(255, 9, 21, 0.93),rgba(255, 255, 255, 0));
             color:rgba(255, 255, 255, 0.37);
           }
           h1 {
